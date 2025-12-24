@@ -1,0 +1,21 @@
+# Crater Detection Dataset Configuration
+# For use with Ultralytics YOLO training
+
+# Dataset paths
+path: ../data  # dataset root dir
+train: train  # train images (relative to 'path')
+val: train  # validation images (same as train, will be split)
+
+# Classes
+nc: 5  # number of classes
+names:
+  0: A      # class A craters (steep rims, >20 deg)
+  1: AB     # class AB craters (intermediate steep)
+  2: B      # class B craters (moderate, 14-17 deg)
+  3: BC     # class BC craters (intermediate gentle)
+  4: C      # class C craters (gentle, <12 deg)
+
+# Image settings
+ch: 1  # grayscale images
+img_size: 640  # training image size
+
