@@ -386,7 +386,7 @@ def cosine_lr_schedule(optimizer, epoch, epochs, lr_min=1e-6, lr_max=1e-3, warmu
 
 def main():
     parser = argparse.ArgumentParser(description='Train YOLOv11 for Crater Detection (CUDA/Colab Optimized)')
-    parser.add_argument('--data', type=str, default='../data/train', help='Path to training data')
+    parser.add_argument('--data', type=str, default='/content/data/train', help='Path to training data')
     parser.add_argument('--cfg', type=str, default='configs/yolo11n_crater.yaml', help='Model config file')
     parser.add_argument('--scale', type=str, default='s', choices=['n', 's', 'm', 'l', 'x'], help='Model scale (n=2.6M, s=9.4M, m=20M, l=25M, x=57M)')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
@@ -397,10 +397,10 @@ def main():
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--weight-decay', type=float, default=0.0005, help='Weight decay')
     parser.add_argument('--val-split', type=float, default=0.2, help='Validation split')
-    parser.add_argument('--save-dir', type=str, default='../models/yolo11_crater_cuda', help='Save directory')
-    parser.add_argument('--resume', type=str, default='', help='Resume from checkpoint')
+    parser.add_argument('--save-dir', type=str, default='/content/drive/MyDrive/YOLO11_crater_cuda', help='Save directory')
+    parser.add_argument('--resume', type=str, default='/content/drive/MyDrive/YOLO11_crater_cuda', help='Resume from checkpoint')
     parser.add_argument('--max-val-batches', type=int, default=None, help='Limit validation to N batches (saves memory)')
-    
+     
     args = parser.parse_args()
     
     # Setup device
