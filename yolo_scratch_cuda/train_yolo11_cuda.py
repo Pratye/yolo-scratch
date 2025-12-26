@@ -102,11 +102,12 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device, epoch, epoc
 def validate(model, dataloader, criterion, device, conf_threshold=0.25, iou_threshold=0.45, max_batches=None):
     """
     Validate model and calculate metrics.
-    
+
     Args:
         max_batches: Limit validation to first N batches (saves memory)
     """
     model.eval()
+    print(f"DEBUG: Model in eval mode: {not model.training}")
     
     total_loss = 0
     total_box_loss = 0
@@ -153,17 +154,27 @@ def validate(model, dataloader, criterion, device, conf_threshold=0.25, iou_thre
             else:
                 print(f"DEBUG: Predictions shape: {preds.shape if hasattr(preds, 'shape') else 'no shape'}")
 
-        # Force inference mode decoding if we got raw features
-        if isinstance(preds, list) and not isinstance(preds, tuple):
-            # We got raw feature maps, need to decode them
+        # Decode predictions for metrics
+        # preds is either: raw features (list) in training mode, or (decoded, raw_features) in eval mode
+        if isinstance(preds, tuple) and len(preds) == 2:
+            # Eval mode: (decoded_predictions, raw_features)
+            # Use the already decoded predictions
+            predictions = decode_predictions_for_metrics(preds[0], batch['img'].shape[-1], conf_threshold, iou_threshold, device)
+        elif isinstance(preds, list):
+            # Training mode: raw features (shouldn't happen in eval, but handle it)
             try:
-                # Temporarily set training to False to force inference decoding
-                was_training = model.training
-                model.eval()
+                # Force inference decoding
                 with torch.no_grad():
-                    preds = model(batch['img'])
-                if was_training:
-                    model.train()
+                    decoded_preds = model(batch['img'])  # This should return (decoded, raw)
+                    if isinstance(decoded_preds, tuple):
+                        predictions = decode_predictions_for_metrics(decoded_preds[0], batch['img'].shape[-1], conf_threshold, iou_threshold, device)
+                    else:
+                        # Fallback: empty predictions
+                        predictions = [{
+                            'boxes': torch.zeros((0, 4), device=device),
+                            'scores': torch.zeros((0,), device=device),
+                            'labels': torch.zeros((0,), dtype=torch.long, device=device)
+                        }] * batch['img'].shape[0]
             except Exception as e:
                 print(f"ERROR: Failed to decode predictions: {e}")
                 predictions = [{
@@ -172,9 +183,15 @@ def validate(model, dataloader, criterion, device, conf_threshold=0.25, iou_thre
                     'labels': torch.zeros((0,), dtype=torch.long, device=device)
                 }] * batch['img'].shape[0]
                 continue
-
-        # Decode predictions for metrics
-        predictions = decode_predictions_for_metrics(preds, batch['img'].shape[-1], conf_threshold, iou_threshold, device)
+        else:
+            # Unexpected format
+            print(f"ERROR: Unexpected prediction format: {type(preds)}")
+            predictions = [{
+                'boxes': torch.zeros((0, 4), device=device),
+                'scores': torch.zeros((0,), device=device),
+                'labels': torch.zeros((0,), dtype=torch.long, device=device)
+            }] * batch['img'].shape[0]
+            continue
         all_predictions.extend(predictions)
         
         # Prepare targets (boxes are already normalized in xyxy format from collate_fn)

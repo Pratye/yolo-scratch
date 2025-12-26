@@ -66,9 +66,9 @@ def test_validation():
                 print(f"  Raw features: {len(preds)} scales")
                 for i, p in enumerate(preds):
                     print(f"    Scale {i}: {p.shape}")
-            elif isinstance(preds, tuple):
+            el            if isinstance(preds, tuple):
                 print(f"  Decoded output: {preds[0].shape}")
-                print(f"  Raw features: {preds[1].shape if len(preds) > 1 else 'None'}")
+                print(f"  Raw features: {len(preds[1]) if len(preds) > 1 and isinstance(preds[1], list) else 'None'} scales")
             else:
                 print(f"  Single output: {preds.shape}")
 
