@@ -267,40 +267,44 @@ def decode_predictions_for_metrics(preds, img_size, conf_threshold, iou_threshol
     Decode YOLO11 predictions to boxes, scores, labels format for metrics.
 
     Args:
-        preds: Model output from Detect head - should be decoded predictions
-            Shape: (batch, num_anchors, 4 + nc) - boxes + class scores
+        preds: Model inference output (decoded_predictions, raw_features)
+            decoded_predictions shape: (batch, num_anchors, 4 + nc)
+            boxes are in xywh format (pixel coordinates), scores are sigmoided
         img_size: Image size (assumed square)
         conf_threshold: Confidence threshold
         iou_threshold: IoU threshold for NMS
         device: Device
 
     Returns:
-        List of prediction dicts with 'boxes', 'scores', 'labels' (normalized)
+        List of prediction dicts with 'boxes', 'scores', 'labels' (normalized xyxy)
     """
     predictions = []
 
-    # Handle different output formats
+    # Extract decoded predictions from inference output
     if isinstance(preds, tuple) and len(preds) == 2:
-        # Inference mode: (decoded_output, raw_features)
-        pred, _ = preds
+        pred, _ = preds  # (decoded_output, raw_features)
     else:
         pred = preds
 
     # pred shape: (batch, num_anchors, 4 + nc)
+    # Format: [x, y, w, h, class_score_0, class_score_1, ..., class_score_nc-1]
+    # All values are in pixel coordinates, scores are sigmoided (0-1)
     batch_size = pred.shape[0]
+    num_anchors = pred.shape[1]
+    nc = pred.shape[2] - 4  # number of classes
 
     for b in range(batch_size):
         pred_batch = pred[b]  # (num_anchors, 4 + nc)
 
         # Split boxes and class scores
-        boxes = pred_batch[:, :4]  # (N, 4) in xyxy format (pixel coordinates)
-        scores = pred_batch[:, 4:]  # (N, nc) class scores
+        boxes_xywh = pred_batch[:, :4]  # (N, 4) in xywh format (pixel coordinates)
+        class_scores = pred_batch[:, 4:]  # (N, nc) sigmoided class scores (0-1)
 
         # Get max class scores and indices
-        class_scores, class_ids = scores.max(dim=1)
+        max_scores, class_ids = class_scores.max(dim=1)
 
         # Filter by confidence threshold
-        mask = class_scores > conf_threshold
+        mask = max_scores > conf_threshold
 
         if mask.sum() == 0:
             # No detections
@@ -311,12 +315,21 @@ def decode_predictions_for_metrics(preds, img_size, conf_threshold, iou_threshol
             })
             continue
 
-        boxes = boxes[mask]
-        class_scores = class_scores[mask]
+        # Apply mask
+        boxes_xywh = boxes_xywh[mask]
+        max_scores = max_scores[mask]
         class_ids = class_ids[mask]
 
+        # Convert xywh to xyxy format
+        x, y, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
+        x1 = x - w / 2
+        y1 = y - h / 2
+        x2 = x + w / 2
+        y2 = y + h / 2
+        boxes_xyxy = torch.stack([x1, y1, x2, y2], dim=1)
+
         # Apply NMS
-        keep_indices = nms_simple(boxes, class_scores, iou_threshold)
+        keep_indices = nms_simple(boxes_xyxy, max_scores, iou_threshold)
 
         if len(keep_indices) == 0:
             predictions.append({
@@ -326,8 +339,8 @@ def decode_predictions_for_metrics(preds, img_size, conf_threshold, iou_threshol
             })
             continue
 
-        boxes_keep = boxes[keep_indices]
-        scores_keep = class_scores[keep_indices]
+        boxes_keep = boxes_xyxy[keep_indices]
+        scores_keep = max_scores[keep_indices]
         labels_keep = class_ids[keep_indices]
 
         # Normalize boxes to [0, 1] (boxes are in pixel coordinates, img_size x img_size)
