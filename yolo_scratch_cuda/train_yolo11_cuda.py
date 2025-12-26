@@ -138,6 +138,41 @@ def validate(model, dataloader, criterion, device, conf_threshold=0.25, iou_thre
         total_cls_loss += loss_items[1].item()
         total_dfl_loss += loss_items[2].item()
         
+        # Debug: Print prediction shapes
+        if batches_processed == 0:  # Only print for first batch
+            print(f"DEBUG: Model training mode: {model.training}")
+            print(f"DEBUG: Predictions type: {type(preds)}")
+            if isinstance(preds, list):
+                print(f"DEBUG: Predictions is list with {len(preds)} elements")
+                for i, p in enumerate(preds):
+                    print(f"  Element {i} shape: {p.shape if hasattr(p, 'shape') else 'no shape'}")
+            elif isinstance(preds, tuple):
+                print(f"DEBUG: Predictions is tuple with {len(preds)} elements")
+                for i, p in enumerate(preds):
+                    print(f"  Element {i} shape: {p.shape if hasattr(p, 'shape') else 'no shape'}")
+            else:
+                print(f"DEBUG: Predictions shape: {preds.shape if hasattr(preds, 'shape') else 'no shape'}")
+
+        # Force inference mode decoding if we got raw features
+        if isinstance(preds, list) and not isinstance(preds, tuple):
+            # We got raw feature maps, need to decode them
+            try:
+                # Temporarily set training to False to force inference decoding
+                was_training = model.training
+                model.eval()
+                with torch.no_grad():
+                    preds = model(batch['img'])
+                if was_training:
+                    model.train()
+            except Exception as e:
+                print(f"ERROR: Failed to decode predictions: {e}")
+                predictions = [{
+                    'boxes': torch.zeros((0, 4), device=device),
+                    'scores': torch.zeros((0,), device=device),
+                    'labels': torch.zeros((0,), dtype=torch.long, device=device)
+                }] * batch['img'].shape[0]
+                continue
+
         # Decode predictions for metrics
         predictions = decode_predictions_for_metrics(preds, batch['img'].shape[-1], conf_threshold, iou_threshold, device)
         all_predictions.extend(predictions)
@@ -213,41 +248,43 @@ def validate(model, dataloader, criterion, device, conf_threshold=0.25, iou_thre
 def decode_predictions_for_metrics(preds, img_size, conf_threshold, iou_threshold, device):
     """
     Decode YOLO11 predictions to boxes, scores, labels format for metrics.
-    
+
     Args:
-        preds: Model output from Detect head - tuple (y, x) where:
-            y: (batch, num_anchors, 4 + nc) - decoded boxes and class scores
+        preds: Model output from Detect head - should be decoded predictions
+            Shape: (batch, num_anchors, 4 + nc) - boxes + class scores
         img_size: Image size (assumed square)
         conf_threshold: Confidence threshold
         iou_threshold: IoU threshold for NMS
-        
+        device: Device
+
     Returns:
         List of prediction dicts with 'boxes', 'scores', 'labels' (normalized)
     """
     predictions = []
-    
-    # Extract decoded predictions
-    if isinstance(preds, tuple):
-        pred = preds[0]  # Get decoded output (y)
+
+    # Handle different output formats
+    if isinstance(preds, tuple) and len(preds) == 2:
+        # Inference mode: (decoded_output, raw_features)
+        pred, _ = preds
     else:
         pred = preds
-    
+
     # pred shape: (batch, num_anchors, 4 + nc)
     batch_size = pred.shape[0]
-    
+
     for b in range(batch_size):
         pred_batch = pred[b]  # (num_anchors, 4 + nc)
-        
+
         # Split boxes and class scores
         boxes = pred_batch[:, :4]  # (N, 4) in xyxy format (pixel coordinates)
         scores = pred_batch[:, 4:]  # (N, nc) class scores
-        
+
         # Get max class scores and indices
         class_scores, class_ids = scores.max(dim=1)
-        
+
         # Filter by confidence threshold
         mask = class_scores > conf_threshold
-        
+
         if mask.sum() == 0:
             # No detections
             predictions.append({
@@ -256,14 +293,14 @@ def decode_predictions_for_metrics(preds, img_size, conf_threshold, iou_threshol
                 'labels': torch.zeros((0,), dtype=torch.long, device=device)
             })
             continue
-        
+
         boxes = boxes[mask]
         class_scores = class_scores[mask]
         class_ids = class_ids[mask]
-        
+
         # Apply NMS
         keep_indices = nms_simple(boxes, class_scores, iou_threshold)
-        
+
         if len(keep_indices) == 0:
             predictions.append({
                 'boxes': torch.zeros((0, 4), device=device),
@@ -271,23 +308,23 @@ def decode_predictions_for_metrics(preds, img_size, conf_threshold, iou_threshol
                 'labels': torch.zeros((0,), dtype=torch.long, device=device)
             })
             continue
-        
+
         boxes_keep = boxes[keep_indices]
         scores_keep = class_scores[keep_indices]
         labels_keep = class_ids[keep_indices]
-        
+
         # Normalize boxes to [0, 1] (boxes are in pixel coordinates, img_size x img_size)
         boxes_normalized = boxes_keep / img_size
-        
+
         # Clamp to [0, 1]
         boxes_normalized = torch.clamp(boxes_normalized, 0.0, 1.0)
-        
+
         predictions.append({
             'boxes': boxes_normalized,
             'scores': scores_keep,
             'labels': labels_keep
         })
-    
+
     return predictions
 
 
