@@ -66,7 +66,7 @@ def test_validation():
                 print(f"  Raw features: {len(preds)} scales")
                 for i, p in enumerate(preds):
                     print(f"    Scale {i}: {p.shape}")
-            el            if isinstance(preds, tuple):
+            elif isinstance(preds, tuple):
                 print(f"  Decoded output: {preds[0].shape}")
                 print(f"  Raw features: {len(preds[1]) if len(preds) > 1 and isinstance(preds[1], list) else 'None'} scales")
             else:
@@ -81,12 +81,18 @@ def test_validation():
                 predictions = decode_predictions_for_metrics(preds, 640, 0.25, 0.45, device)
                 print(f"  Decoded predictions: {len(predictions)} images")
                 for i, pred in enumerate(predictions):
-                    print(f"    Image {i}: {len(pred.get('boxes', []))} boxes")
-                    if len(pred.get('boxes', [])) > 0:
-                        print(f"      Scores: {pred['scores'][:3].cpu().numpy()}")
-                        print(f"      Labels: {pred['labels'][:3].cpu().numpy()}")
+                    boxes = pred.get('boxes', [])
+                    scores = pred.get('scores', [])
+                    labels = pred.get('labels', [])
+                    print(f"    Image {i}: {len(boxes)} boxes")
+                    if len(boxes) > 0:
+                        print(f"      Scores: {scores[:3] if len(scores) >= 3 else scores}")
+                        print(f"      Labels: {labels[:3] if len(labels) >= 3 else labels}")
+                        print(f"      Box sample: {boxes[0].cpu().numpy()}")
             except Exception as e:
                 print(f"  ERROR decoding: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Only test first batch
             break
