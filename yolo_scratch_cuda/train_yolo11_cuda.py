@@ -467,6 +467,7 @@ def main():
     parser.add_argument('--save-dir', type=str, default='/content/drive/MyDrive/YOLO11_crater_cuda', help='Save directory')
     parser.add_argument('--resume', type=str, default='/content/drive/MyDrive/YOLO11_crater_cuda/last.pt', help='Resume from checkpoint')
     parser.add_argument('--max-val-batches', type=int, default=None, help='Limit validation to N batches (saves memory)')
+    parser.add_argument('--val-conf', type=float, default=0.25, help='Validation confidence threshold (lower for early training)')
      
     args = parser.parse_args()
     
@@ -609,8 +610,8 @@ def main():
         
         # Validate (limit batches if specified to save memory)
         val_metrics = validate(
-            model, val_loader, criterion, device, 
-            conf_threshold=0.25, iou_threshold=0.45,
+            model, val_loader, criterion, device,
+            conf_threshold=args.val_conf, iou_threshold=0.45,
             max_batches=args.max_val_batches
         )
         
